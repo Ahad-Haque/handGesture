@@ -23,34 +23,105 @@ class HandGestureRecognizer:
         
         # Camera index
         self.camera_index = camera_index
-        
+    
     def init_camera(self):
         """Initialize camera with error handling"""
         print(f"Initializing camera {self.camera_index}...")
         
-        # Try different camera indices if the default doesn't work
-        for idx in [self.camera_index, 0, 1, 2]:
-            cap = cv2.VideoCapture(idx, cv2.CAP_DSHOW)  # Use DirectShow on Windows
-            if cap.isOpened():
-                print(f"Camera {idx} opened successfully!")
-                
-                # Set camera properties
-                cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-                cap.set(cv2.CAP_PROP_FPS, 15)
-                
-                # Test read
-                ret, frame = cap.read()
-                if ret and frame is not None:
-                    print(f"Camera {idx} is working properly!")
-                    return cap
-                else:
-                    print(f"Camera {idx} opened but cannot read frames")
-                    cap.release()
-            else:
-                print(f"Failed to open camera {idx}")
+        # Try different backends in addition to different camera indices
+        backends = [
+            (cv2.CAP_DSHOW, "DirectShow"),  # Windows preferred
+            (cv2.CAP_ANY, "Default"),       # Platform default
+            (cv2.CAP_MSMF, "Media Foundation"),  # Alternative Windows backend
+        ]
         
+        for idx in [self.camera_index, 0, 1, 2]:
+            for backend, backend_name in backends:
+                print(f"Trying camera {idx} with {backend_name} backend...")
+                try:
+                    # Use the specific backend API
+                    cap = cv2.VideoCapture(idx, backend)
+                    
+                    # Wait a moment for camera initialization
+                    time.sleep(1)
+                    
+                    if cap.isOpened():
+                        print(f"Camera {idx} opened successfully with {backend_name}!")
+                        
+                        # Set camera properties
+                        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+                        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+                        cap.set(cv2.CAP_PROP_FPS, 15)
+                        
+                        # Test read multiple frames
+                        for _ in range(5):  # Try reading a few frames
+                            ret, frame = cap.read()
+                            if not ret or frame is None:
+                                print(f"Failed to read frame from camera {idx}")
+                                cap.release()
+                                break
+                            # Short delay between test frames
+                            time.sleep(0.1)
+                        else:  # This executes if the for loop completes normally
+                            print(f"Camera {idx} with {backend_name} is working properly!")
+                            return cap
+                        
+                        # If we got here, frame reading failed
+                        print(f"Camera {idx} opened but cannot read frames")
+                        cap.release()
+                    else:
+                        print(f"Failed to open camera {idx} with {backend_name}")
+                        if cap is not None:
+                            cap.release()
+                except Exception as e:
+                    print(f"Error with camera {idx} and {backend_name}: {e}")
+        
+        # If no camera available, try listing available cameras
+        self.list_available_cameras()
         return None
+
+    def list_available_cameras(self):
+        """List available cameras using platform-specific methods"""
+        print("\nAttempting to list available cameras...")
+        
+        # Platform specific camera listing
+        if sys.platform.startswith('win'):
+            # Windows - try to enumerate cameras
+            try:
+                import wmi
+                wmi_obj = wmi.WMI()
+                wmi_cameras = wmi_obj.Win32_PnPEntity(ConfigManagerErrorCode=0)
+                
+                print("\nDetected camera devices on Windows:")
+                camera_found = False
+                for camera in wmi_cameras:
+                    if "camera" in camera.Caption.lower() or "webcam" in camera.Caption.lower():
+                        print(f" - {camera.Caption}")
+                        camera_found = True
+                
+                if not camera_found:
+                    print("No camera devices detected via WMI")
+            except Exception as e:
+                print(f"Could not list Windows cameras: {e}")
+        elif sys.platform.startswith('linux'):
+            # Linux - check /dev/video*
+            try:
+                import glob
+                cameras = glob.glob('/dev/video*')
+                print("\nDetected video devices on Linux:")
+                for camera in cameras:
+                    print(f" - {camera}")
+            except Exception as e:
+                print(f"Could not list Linux cameras: {e}")
+        
+        print("\nTroubleshooting steps:")
+        print("1. Ensure your camera is properly connected")
+        print("2. Close any applications that might be using the camera (including web browsers)")
+        print("3. Check device manager to verify camera is properly installed")
+        print("4. Try updating camera drivers")
+        print("5. Try a different USB port")
+        print("6. Restart your computer")
+
     
     def classify_gesture(self, landmarks):
         """Classify hand gesture based on landmarks"""
@@ -288,3 +359,5 @@ if __name__ == "__main__":
         print(f"Error: {e}")
         import traceback
         traceback.print_exc()
+
+        
